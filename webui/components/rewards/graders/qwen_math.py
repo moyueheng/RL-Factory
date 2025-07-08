@@ -42,14 +42,17 @@ def parse_digits(num):
     num = regex.sub(",", "", str(num))
     try:
         return float(num)
-    except:
+    except (ValueError, TypeError, OverflowError) as e:
         if num.endswith("%"):
             num = num[:-1]
             if num.endswith("\\"):
                 num = num[:-1]
             try:
                 return float(num) / 100
-            except:
+            except (ValueError, TypeError, OverflowError):
+                # Log the specific error for debugging
+                import logging
+                logging.debug(f"Failed to parse percentage '{num}': {e}")
                 pass
     return None
 
@@ -115,7 +118,10 @@ def math_equal(
                 except Exception:
                     continue
             return False
-    except:
+    except (ValueError, TypeError, AttributeError, ZeroDivisionError) as e:
+        # Log numerical comparison errors for debugging
+        import logging
+        logging.debug(f"Failed numerical comparison - prediction: {prediction}, reference: {reference}, error: {e}")
         pass
 
     if not prediction and prediction not in [0, False]:
@@ -280,10 +286,13 @@ def symbolic_equal(a, b):
         for f in [parse_latex, parse_expr, latex2sympy]:
             try:
                 return f(s.replace("\\\\", "\\"))
-            except:
+            except (ValueError, TypeError, AttributeError, ImportError, SyntaxError) as e:
                 try:
                     return f(s)
-                except:
+                except (ValueError, TypeError, AttributeError, ImportError, SyntaxError):
+                    # Log parsing failures for debugging
+                    import logging
+                    logging.debug(f"Failed to parse '{s}' with {f.__name__}: {e}")
                     pass
         return s
 

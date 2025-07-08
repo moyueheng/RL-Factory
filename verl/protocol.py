@@ -284,9 +284,62 @@ class DataProto:
 
     @staticmethod
     def load_from_disk(filepath) -> "DataProto":
+        import os
+        # Security check: ensure the file path is not suspicious
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(f"File not found: {filepath}")
+        
+        # Get file size to prevent loading extremely large files
+        file_size = os.path.getsize(filepath)
+        max_file_size = 10 * 1024 * 1024 * 1024  # 10GB limit
+        if file_size > max_file_size:
+            raise ValueError(f"File too large: {file_size} bytes. Maximum allowed: {max_file_size} bytes")
+        
         with open(filepath, "rb") as f:
-            data = pickle.load(f)
-            return data
+            try:
+                # Use restricted unpickler to prevent arbitrary code execution
+                import pickle
+                import io
+                
+                # Read the file content
+                file_content = f.read()
+                
+                # Create a restricted unpickler that only allows safe classes
+                class RestrictedUnpickler(pickle.Unpickler):
+                    def find_class(self, module, name):
+                        # Only allow specific safe modules and classes
+                        safe_modules = {
+                            'numpy': ['ndarray', 'dtype', 'float64', 'int64', 'bool_'],
+                            'torch': ['Tensor', 'Size', 'dtype', 'device'],
+                            'tensordict': ['TensorDict'],
+                            'builtins': ['dict', 'list', 'tuple', 'set', 'frozenset', 'bytes', 'bytearray'],
+                            'collections': ['OrderedDict', 'defaultdict'],
+                            'verl.protocol': ['DataProto', 'DataProtoItem'],
+                        }
+                        
+                        if module in safe_modules and name in safe_modules[module]:
+                            return getattr(__import__(module, fromlist=[name]), name)
+                        
+                        # Allow basic Python types
+                        if module == 'builtins' and name in ['dict', 'list', 'tuple', 'set', 'frozenset', 'bytes', 'bytearray', 'str', 'int', 'float', 'bool', 'NoneType']:
+                            return getattr(__import__(module, fromlist=[name]), name)
+                        
+                        # Raise an exception for potentially unsafe classes
+                        raise pickle.UnpicklingError(f"Forbidden class: {module}.{name}")
+                
+                # Use the restricted unpickler
+                data = RestrictedUnpickler(io.BytesIO(file_content)).load()
+                
+                # Verify the loaded data is actually a DataProto
+                if not isinstance(data, DataProto):
+                    raise ValueError(f"Loaded data is not a DataProto instance: {type(data)}")
+                
+                return data
+                
+            except (pickle.UnpicklingError, EOFError, ValueError) as e:
+                raise ValueError(f"Failed to load DataProto from {filepath}: {str(e)}")
+            except Exception as e:
+                raise RuntimeError(f"Unexpected error loading DataProto from {filepath}: {str(e)}")
 
     def print_size(self, prefix=""):
         size_of_tensordict = 0
